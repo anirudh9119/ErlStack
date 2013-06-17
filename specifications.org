@@ -1,0 +1,291 @@
+#+TITLE:     Specifications for ErlangStack v1.0
+#+AUTHOR:    Saurabh Barjatiya
+#+EMAIL:     saurabh@sbarjatiya.com
+#+DATE:      2013-05-26 Sun
+#+DESCRIPTION:
+#+KEYWORDS:
+#+LANGUAGE:  en
+#+OPTIONS:   H:3 num:t toc:t \n:nil @:t ::t |:t ^:t -:t f:t *:t <:t
+#+OPTIONS:   TeX:t LaTeX:t skip:nil d:nil todo:t pri:nil tags:not-in-toc
+#+INFOJS_OPT: view:nil toc:nil ltoc:t mouse:underline buttons:0 path:http://orgmode.org/org-info.js
+#+EXPORT_SELECT_TAGS: export
+#+EXPORT_EXCLUDE_TAGS: noexport
+#+LINK_UP:   
+#+LINK_HOME: 
+#+XSLT:
+
+* Repository URL
+  http://ras.virtual-labs.ac.in/vlead-ras/erlangstack
+* Start-up sequence
+  The cloud would be started in following manner:
+  1. Start yaws web-server at management node.
+  2. Yaws will create a management process and register it
+     with global module
+  3. For every base machine:
+     1. Start erlang agents at base machines without shell.
+     2. Erlang agent nodes should ping to management nodes
+	yaws web-server
+	+ Check on management nodes yaws server that connection
+	  worked using node().
+     3. A host_register function should send {self() Pid,
+        hostname} to management_process.  Management process
+        Pid can be found using global module.
+     + Check using index.yaws page that all base_machines
+       information is captured by management process.
+
+* Host agent design
+** Records to be defined for base host agent
+
+#+begin_example
+-record(agent, {management_process_pid, hostname}).
+#+end_example
+
+** Functions to be implemented at base host agent
+
+#+begin_example
+base_host_agent(Agent1) ->
+   receive
+       {stop_agent} ->
+            %% Stop agent after sending log to management process at notice level 
+            Pid1 = Agent1#agent.management_process_pid,
+            Hostname1 = Agent1agent.hostname,
+            Message1 = lists:flatten(io_lib:format("Agent on host ~p with Pid ~p is stopping.",
+                    [Hostname1, self()])),
+            Pid1 ! {log, {notice, Message1}},
+            ok;
+
+       {update_management_process_pid, New_pid} ->
+            %% Change Pid of management process to New_pid
+            Agent2 = Agent1#agent{management_process_pid=New_pid},
+            base_host_agent(Agent2);
+
+       {update_hostname, New_hostname} ->
+            %% Change hostname to New_hostname
+            %% stub
+            base_host_agent(Agent1);
+
+       {get_container_list, Sender, Request_id} ->
+            %% Get list of containers on base machine using "vzlist -a" 
+            %% stub
+            Sender ! {Request_id, Container_list},
+            base_host_agent(Agent1); 
+
+       {get_vm_list, Sender, Request_id} ->
+            %% Get list of VMs on base machine using "virsh list --all"
+            %% stub
+            Sender ! {Request_id, VM_list},
+            base_host_agent(Agent1); 
+
+       {create_container, CTID, Options} ->
+            %% create container with "vzctl create CTID  --option value" command
+            %% Example message {create_container, Sender, Request_id, 101, 
+            %%             [{"hostname", "test.virtual-labs.ac.in"},
+            %%              {"ostemplate", "centos-6.3-x86_64"},
+            %%              {"ipaddress", "10.4.15.201"}]}
+            %% should result into command
+            %%    vzctl create 101 --hostname test.virtual-labs.ac.in 
+            %%          --ostemplate centos-6.3-x86_64 --ipaddress 10.4.15.201
+            %% stub
+            base_host_agent(Agent1);
+ 
+       {start_container, CTID} ->
+            %%Start container with given CTID
+            %%stub
+            base_host_agent(Agent1);
+ 
+       %% Similarly support modify_container with Options, stop_container,
+       %% delete_container, migrate_container, etc.
+
+       {stop_vm, VMID or name} ->
+           %% Stop a running VM using "virsh destroy  {VMID|name}"
+           %% stub
+           base_host_agent(Agent1);
+
+       %% Similarly more functions for VMs, networks, etc. that are easily
+       %% achievable.
+
+       Any1 -> 
+            Pid1 = Agent1#agent.management_process_pid,
+            Hostname1=Agent1#agent.hostname;
+            Message1=lists:flatten(io_lib:format("Unknown message ~p received at base ~p.", 
+                     [Any1, Hostname1])),
+            Pid1 ! {log, {info, Message1}},
+            base_host_agent(Agent1)
+   end.
+#+end_example
+
+* Management process design
+** Records to be defined for management process
+#+begin_example
+-record(manager, {host_agent_info}).
+#+end_example
+Here host_agent_info will be a list of tuples where each
+tuple is of form {Agent_pid, Hostname}.  So sample record
+could be like
+#manager{host_agent_info=[{Pid1, "base2"}, {Pid2, "base3"}]}
+
+** Functions to be implemented for management process
+
+#+begin_example
+cloud_manager(Manager1) ->
+    receive 
+        {stop_manager} -> ok;
+
+        {log, {Severity, Message}} ->
+            log(Severity, Message),
+            cloud_manager(Manager1);
+
+
+        Any1 -> 
+            Message1=lists:flatten(io_lib:format("Unknown message ~p received at manager.", 
+                     [Any1])),
+            log(info, Message1),
+            cloud_manager(Manager1)
+    end.
+#+end_example
+* Web pages to be created for interacting with management process
+** login.yaws
+   - Implement simple password base login.  First
+     implementation can have static password such as
+     "secret", hard-coded in the implementation.
+** index.yaws
+   - List names of all base hosts as links 
+   - List count of containers and VMs on each base host
+** base_machine_manager.yaws?hostname=
+   - Allows managing of a particular base machines
+     container and VMs.
+   - List all containers and VMs as links
+** container_manager.yaws?hostname=&container_id=
+   - Allows managing of specific container :: stop, start,
+        delete, migrate, etc.
+   - Show CPU units, RAM, etc. allocated
+   - Show actual usage of RAM, disk, etc.
+   - Allow seeing process-list, uptime, load average, etc.
+   - Link back to base_manager.yaws
+** vm_manager.yaws?hostname=&vm_id=
+   - Allow managing of specific VM :: stop, destroy,
+        undefine, migrate?, snapshot, suspend, restore, etc.
+   - Show CPU, RAM, disk, etc. allocated
+   - DumpXML configuration
+   - Link back to base_manager.yaws
+** all_hosts.yaws?
+   - List all containers and VMs as links with information
+     about base machine
+** logout.yaws
+** logs.yaws
+   - See all logs.
+   - See logs of particular severity
+   - See logs with particular keyword 
+   - See logs with severity higher than specified
+     + 0 :: Emergency / emerg
+     + 1 :: Alert / alert
+     + 2 :: Critical / crit
+     + 3 :: Error / err
+     + 4 :: Warning / warn
+     + 5 :: Notice / notice
+     + 6 :: Informational / info 
+     + 7 :: Debug / debug
+* Action items for current plan
+** Divide tasks among all RAs working on cloud
+** Come up with consistent naming (base machine vs host vs dom-0 etc.)
+
+** Install openVZ on lab320 machines for testing the cloud being setup
+* Further improvements
+** Multiple management stations
+   - Allow new management station to message to existing
+     management station.  All management stations can
+     monitor each other.
+   - All agents are informed about new management stations.
+   - Logs are sent to all management stations
+** Decouple exact container, VM hypervisor
+   - Current version assumes use of openVZ and kvm
+     (virsh).  But an improved version can use
+     list_container(), list_vms() etc. functions of a
+     library that abstracts exact hypervisor in-place.  
+   - Library can have a process which can be initialized as
+     per current environment on start-up.
+** VM Creation
+   - Support creation of new VMs
+** VM Console
+   - Support viewing of VM using HTTP based vnc viewer
+     clients
+** Separate VM and container functions to separate process
+   - All VM and container functions can be part of other
+     process.  This makes design more cleaner and modular.
+** Implement acknowledgement
+   - Implement acknowledgement for start_container,
+     create_container, etc. messages so that sender knows
+     whether action was successful or not.
+** User accounts
+   - Implement various user accounts with various privileges
+   - All actions should be logged with username who
+     performed the action
+   - Implement pages for add user, delete user, modify
+     user, etc.
+   - User accounts should be taken from LDAP server
+*** Fine-grained permissions
+    - For every action such as stop_agent, start_container,
+      there should be configuration permission for each
+      user.  Only when a user has permission of given type,
+      the corresponding message from user should be honored.
+** Add more logging 
+   - Add more logging for every action performed including
+     login, logout.  Log IPaddress of client for each
+     request.
+   - Store logs in a log file in standard format. 
+   - Agent should buffer logs if temporarily disconnected
+     from Manager.  Agent can have a local copy of logs for
+     debuggin purposes.
+** Monitoring for hosts getting disconnected.  
+   - Monitor if base agent gets disconnected.  Remove it
+     from console.  Keep disconnected list for a while in
+     memory and check if host can be reached again.  After
+     long time remove the name.
+** Advanced container tasks
+*** Support package management using apt, yum transparently
+    - Agent should detect OS of container (Ubuntu, Fedora,
+      Cent-OS, debian, etc.) and allow installation and
+      removal of packages.  Should support configuring
+      proxy server.
+*** Support file management
+    - Support upload, download, copy, move, rename, delete,
+      etc. fo files to/from container
+*** Process management
+    - Show list of processes. Allow killing of processes.
+      Allow sending other singnals HUP, INT, etc. to
+      processes.  Allow lauching new commands in background.
+*** Allow monitoring of resource usage
+    - Allow monitoring of disk, network, CPU, etc. usage
+      for solving performance issues.
+** Cloud configuration backup
+   - Allow taking configuration backup of cloud.  If user
+     accounts are implemented then various privileges can
+     be backed up. 
+** Allow management and addition of base machines
+   - Allow addition of base machine by using IP, user-name
+     and password/key-based authentication.
+   - Support setting up keys to base machine
+   - Support installation of erlang and starting host agent
+** Hot upgradation of host agent
+   - Compile new host agent at development node
+   - Send new agent to manager to store it and forward it
+     to all nodes.
+   - Manager should store version and list of all host
+     agents
+   - Should be possible to send a particular version of
+     host agent to particular base machine
+   - This information of choice can be stored in database.
+** Support debugging logs
+   - Support sending debugging logs for individual steps
+     and values received in the function
+   - There should be support for clearing debugging logs
+** Support monitoring
+   - Monitor values such as CPU usage, network usage
+   - Send alerts when things are bad
+   - Draw graphs using history of values
+
+** Support for maintenance of base machines
+   - Options to migrate all VMs and containers of a base
+     machine to other machine, so that the base machine can
+     be taken off-line for maintenance.
+     

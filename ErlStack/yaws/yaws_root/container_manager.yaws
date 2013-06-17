@@ -1,0 +1,243 @@
+<html>
+  <head>
+    <title>ErlStack</title>
+    <link rel="stylesheet" href="css/style.css" media="screen,print">
+  </head>
+  <body id="body">
+    <div id="container">
+      <erl>
+lf(A) ->
+    lists:flatten(A).
+
+out(Arg) ->
+    case yaws_api:queryvar(Arg,"hostname") of
+	undefined ->
+	    {ehtml,generate_error_ehtml("Invalid Hostname")};
+	{ok,Hostname} ->
+	    Base_host=list_to_atom(Hostname),       %Base Host name
+	    %Base_host=Hostname,
+	    %io:format("Hostname received as ~p~n", [Hostname]),
+	    case yaws_api:queryvar(Arg,"container_id") of
+		undefined ->
+		    {ehtml,generate_error_ehtml("Invalid Container ID")};
+		{ok,ContainerID} ->
+		    CTID=list_to_integer(ContainerID), %CTID of container
+		    %io:format("ContainerID is ~p~n", [ContainerID]),
+		    %%We have Hostname and CTID. Get Pid of Hostname through cloudmanager
+		    case global:whereis_name(cloud_manager) of  
+			undefined ->
+			    {ehtml, generate_error_ehtml("Internal error. cloud_manager is down.")};
+
+			Pid1 ->
+			    Cloudman_pid=Pid1,
+			    io:format("Cloud manager pid is ~p~n", [Pid1]),
+			    Request_id=erlang:make_ref(),
+			    Pid1 !{get_pid_of_host,self(),Base_host,Request_id},
+			    receive
+			    %%Received the Pid of Base Machine
+				{Request_id,{error,error}}->
+				    {ehtml, generate_error_ehtml("Internal Error. Couldnot locate pid of Base Machine.")};
+
+				{Request_id,Tuple} ->
+				    {BasePid,_}=Tuple,
+				    io:format("Tuple and BasePid are ~p and ~p~n", [Tuple, BasePid]),
+				    
+				    %%Get stats of container
+				    CTName1=get_property(get_hostname,BasePid,CTID),
+				    Status1=get_property(get_status,BasePid,CTID),
+				    Template1=get_property(get_template,BasePid,CTID),
+				    Uptime1=get_property(get_uptime,BasePid,CTID),
+				    Total_mem1=get_property(get_total_memory,BasePid,CTID),
+				    Free_mem1=get_property(get_free_memory,BasePid,CTID),
+				    
+				    %Generate the html page
+				    {ehtml,generate_ehtml(Base_host,CTID,CTName1,Template1,Status1,Uptime1,Total_mem1,Free_mem1)};
+
+				 Any->
+					  {ehtml,generate_error_ehtml("Something bad happened. That's all there is.")}
+			    after 5000 ->
+				    {ehtml, generate_error_ehtml("Internal Error. Couldnot locate pid of Base Machine.")}
+			    end		
+		    end 
+	    end
+    end .
+		    
+
+%%fetches a property for a given container on a given base. Property must be an atom. Typically, the message that needs to be sent across to agents.erl. Check agents.erl for the possible messages.
+get_property(Property,BasePid,CTID)->
+    Req=erlang:make_ref(),
+    BasePid!{Property,self(),CTID,Req},
+    Property1=receive
+		 {Req,Prop}->
+		     case Prop of
+			 []->
+			     %%Container with non existing CTID 
+			     X1=["--"],
+			     X1;
+			 Any ->
+			     case is_atom(Any) of
+				 true-> Any1=atom_to_list(Any),
+					Any1;
+				 false-> Any
+			     end
+		     end
+	     after 5000 ->
+		     %%This means something sinister has happened to the base machine. Poor thing! :(
+		     Prop1="##",
+		     Prop1
+	     end.
+			 
+generate_error_ehtml(Message) ->
+    [
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,[{width,"300px"}],
+	  {a,[{href,"index.yaws"}],
+	   {h1,[],"Home"}
+	  }
+	 }
+	]
+       }
+      ]
+     },
+     {h1,[],["Internal Error"]},
+     {h4, [], Message},
+     {br}
+     
+    ].
+
+generate_ehtml(Base_host,CTID,CTname,Template,Status,Uptime,Total_Mem,Free_Mem) ->
+    [
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,[{width,"300px"}],
+	  {a,[{href,"index.yaws"}],
+	   {h1,[],"Home"}
+	  }
+	 }
+	]
+       }
+      ]
+     }
+     ,{br},
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Container ID"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],io_lib:format("~p",[CTID])}
+	 }
+	]
+       },
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Host Name"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[], erlang:atom_to_list(Base_host)}
+	 }
+	]
+       },
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Template"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[], Template}
+	 }
+	]
+       },
+
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Status"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  if Status =:= "stopped\n" ->
+		  [{a,[{href,string:concat(string:concat("container_ops.yaws?action=start&basehost=",atom_to_list(Base_host)),string:concat("&ctid=",integer_to_list(CTID)))}],"Stopped. Start this container?"}];
+	     Status =:= "running\n" ->
+		  [{a,[{href,string:concat(string:concat("container_ops.yaws?action=stop&basehost=",atom_to_list(Base_host)),string:concat("&ctid=",integer_to_list(CTID)))}],"Running. Stop this container?"}];
+	     true -> 
+		  [{h3,[],"Container Doesn't exist."}] end 
+	 }
+	]
+       },
+
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Up time"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[], Uptime}
+	 }
+	]
+       },
+
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Total Memory"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],
+	   if 
+	       Status =:= "stopped\n" ->
+		   [{p,[],"Container not running"}];
+	       Status =:= "running\n" ->
+		   [{p,[],Total_Mem}];
+	       true -> 
+		   [{p,[],"Container Inexistent"}] end }
+	 }
+	]
+       },
+
+       {tr,[],
+	[
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],"Free Memory"}
+	 },
+	 {td,
+	  [{width,"300px"}],
+	  {h3,[],
+	   if Status =:= "stopped\n" ->
+		   [{p,[],"Container not running"}];
+	      Status =:= "running\n" ->
+		   [{p,[],Free_Mem}];
+	      true -> 
+		   [{p,[],"Container Inexistent"}] end 
+	  }
+	 }
+	]
+       }
+      ]
+     }
+    ].
+     
+     </erl>
+    </div>
+  </body>
+</html>

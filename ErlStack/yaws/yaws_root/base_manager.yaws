@@ -1,0 +1,87 @@
+<html>
+  <head>
+    <title>ErlStack</title>
+    <link rel="stylesheet" href="css/style.css" media="screen,print">
+  </head>
+  <body id="body">
+    <div id="container">
+      <erl>
+
+out(Arg) ->
+    case yaws_api:queryvar(Arg,"hostname") of
+	undefined -> generate_ehtml("Invalid Hostname"," ");
+	{ok,Hostname} -> 
+%%	    {ehtml,generate_ehtml(Hostname," ")},
+	    case yaws_api:queryvar(Arg,"pid") of 
+	     {ok,B} ->
+	     	Pid=erlang:list_to_pid(B),
+	    	{ehtml,generate_ehtml(Hostname,Pid)}
+	    end 	 
+	     	
+%            global:whereis_name(cloud_manager)! {get_num_containers, self() , Request_id
+%	    		io:fomat("Its registered ~n"),
+%			{ehtml,generate_ehtml(" Check","Registered")}
+%			Pid1 ! {get_host_list,self()},
+ %    			receive
+%			{Message} ->
+%				{ehtml,generate_ehtml(" Check",Message)}
+
+%			after 2000 ->
+%				{ehtml, generate_ehtml("Internal Error. `Machine might be busy.",[])}
+   end.
+
+
+
+generate_ehtml(Message,Pid) ->
+    [
+     menu:get_menu(),
+     {h1,[],[Message,",",erlang:pid_to_list(Pid)]},
+     {h1, [], "Containers"},
+%  {table,[],generate_container_row(Message)} 
+  {table,[],get_num_containers(Message,Pid)}
+    ].
+
+generate_container_row(Hostname) ->
+    [
+     "to be implemented"
+    ].
+
+
+generate_msg(Message) ->
+[
+        {h1,[],[Message]}
+].
+	
+get_num_containers(Hostname,Pid) ->
+    Request_id1 = erlang:make_ref(),	    
+    Manager_pid1 = global:whereis_name(cloud_manager),	
+    io:format("Pid of the manager is ~p~n",[Manager_pid1]),
+						%	Pid3=list_to_pid
+    io:format("Pid of the Host is~p~n",[Pid]),
+    Name=erlang:list_to_atom(Hostname),
+    Manager_pid1 ! {get_pid_of_host,self(),Name,Request_id1},
+    receive
+	{Request_id,X}->
+	    io:format("In first case ~p~n",[X]),
+	    {Pid2,_}=X,
+	    Manager_pid1 ! {get_number_containers, self(), Pid, Request_id1},
+	    receive
+		{Request_id1, {error,Reason1}} ->
+		    io:format("Error ~p encountered.~n", [Reason1]);
+
+		{Request_id1,Total_number_of_containers,Running_containers,Stopped_containers} ->
+		    io:format("Recieved container list~p~n", [Total_number_of_containers]);
+		Any ->
+		    io:format("At base maanager ~n")
+	    end;		
+
+	{Request_id,{error,error}}->
+	    io:format("Error encountered ~n")
+    end,
+    "1".
+
+    
+      </erl>
+    </div>
+  </body>
+</html>

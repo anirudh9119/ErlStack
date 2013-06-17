@@ -1,0 +1,68 @@
+#+Title:  ErlStack 
+#+Author: Chandravadan, Karan and Anirudh
+#+Email:  s.chandravadan@gmail.com
+#+Date:   
+
+* Goal
+- To build an indigeneous cloud computing platform that will meet the needs of Virtual Labs regardless of its size, 
+by being simple to implement and massively scalable.
+
+* Why Erlang?
+   - Light Weight Concurrency.
+     + Creating a process = 500B! 
+   - Hot Code Replacement.
+     + No downtime!
+   - Transparent Distribution.
+     + Single Computer to Network for free!
+
+* Why ErlStack?    
+  - Container Virtualisation.
+    + Isolates the guests, doesn't virtualise hardware
+    + Kernel does process isolation and resource management
+    + Lightweight and fast
+  - Support for container virtualisation in cloud platforms: Limited.
+    + Mostly support LXC, which is bested by OpenVZ. (Checkpointing, Live migration, Security)
+  - Ease of installation and usage.
+    + Fiendishly tricky installations
+    + RA's working on Eucalyptus or OpenStack can attest to that! :P
+  - Rapid Development and unstable features.
+
+* Introducing.. YAWS!
+  - Yet Another Web Server.
+  - Written in Erlang, blazingly fast.
+  - YAWS vs Apache
+    + http://www.sics.se/~joe/apachevsyaws.html
+    + Apache dies at 4000 parallel connections, YAWS holds strong.
+    + Reason : Implementation of concurrency by the underlying OS.
+    + Erlang and YAWS don't depend on OS's concurrency mechanisms, so don't suffer.
+  - Platform Agnostic.
+    + Linux, Windows, x86, x64
+  
+* Architecture of ErlStack
+  <Material to come!>
+
+* Issues Faced
+
+** Erlang
+   - First Functional Language for most of us
+   - Paradigm Shock!
+     + Variables don't change!
+     + RIP Iteration
+     + Syntax!
+     + Not much of documentation
+   - Version differences and problems.
+** Project Management
+   - And then there were three...
+   - Constant Reassignment of work
+   - Along came 'bazaar'
+     + Almost always had conflicting codes
+     + Lots of stepping on toes, refactoring
+     + Used to git, stark differences in philosophy at some points
+** Yaws
+   - Ehtml : learning curve
+     + Turned into an advantage later
+
+
+  
+  
+  

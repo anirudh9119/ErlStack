@@ -1,0 +1,177 @@
+<html>
+  <head>
+    <title>ErlStack</title>
+    <link rel="stylesheet" href="css/style.css" media="screen,print">
+  </head>
+  <body id="body">
+    <div id="container">
+      <erl>
+lf(A) ->
+    lists:flatten(A).
+
+
+out(Arg) ->
+    Get_get=fun(Variable1) ->
+		 case yaws_api:queryvar(Arg, Variable1) of
+		     undefined -> undefined;
+		     {ok, Value1} -> Value1
+		 end
+	     end,
+   
+    case yaws_api:queryvar(Arg,"basehost") of
+	undefined ->
+	    {ehtml,generate_error_ehtml("Invalid Hostname")};
+	{ok,Hostname} ->
+	    Base_host=list_to_atom(Hostname),       %Base Host name
+	    %Base_host=Hostname,
+	    %io:format("Hostname received as ~p~n", [Hostname]),
+	    case yaws_api:queryvar(Arg,"ctid") of
+		undefined ->
+		    {ehtml,generate_error_ehtml("Invalid Container ID")};
+		{ok,ContainerID} ->
+		    CTID=list_to_integer(ContainerID), %CTID of container
+		    %io:format("ContainerID is ~p~n", [ContainerID]),
+		    %%We have Hostname and CTID. Get Pid of Hostname through cloudmanager
+		    
+	
+		    case global:whereis_name(cloud_manager) of  
+			undefined ->
+			    {ehtml, generate_error_ehtml("Internal error. cloud_manager is down.")};
+
+			Pid1 ->
+			    Cloudman_pid=Pid1,
+			    io:format("Cloud manager pid is ~p~n", [Pid1]),
+			    Request_id=erlang:make_ref(),
+			    Pid1 !{get_pid_of_host,self(),Base_host,Request_id},
+			    receive
+			    %%Received the Pid of Base Machine
+				{Request_id,{error,error}}->
+				    {ehtml, generate_error_ehtml("Internal Error. Couldnot locate pid of Base Machine.")};
+
+				{Request_id,Tuple} ->
+				    {BasePid,_}=Tuple,
+				    io:format("Tuple and BasePid are ~p and ~p~n", [Tuple, BasePid]),
+				    
+				    %%See what we need to do
+				    Action=Get_get("action"),
+				    case Action of
+					"start" ->
+					    BasePid!{start_container,self(),CTID},
+					    Message=receive
+							Any -> Any
+						    after 5000 ->
+							      X={"Failed"},
+							  X
+						    end,
+					    io:format("Starting message was ~p ~n",[Message]),
+					    Message1=tuple_to_list(Message),
+					    {ehtml,generate_start_container_page(Base_host,CTID,Message1)};
+					"stop" ->
+					    BasePid!{stop_container,self(),CTID},
+					    Message2=receive
+							Any1 -> Any1
+						    after 5000 ->
+							      X1="Failed",
+							  X1
+						    end,
+					    Message3=tuple_to_list(Message2),
+					    {ehtml,generate_stop_container_page(Base_host,CTID,Message3)};
+					Any ->
+					    io:format("~p",[Action]),
+					    {ehtml,generate_error_ehtml(string:concat("Invalid Action ",[Action]))}
+				    end
+		 
+			    after 5000 ->
+				    {ehtml, generate_error_ehtml("Internal Error. Couldnot locate pid of Base Machine.")}
+			    end		
+		    end 
+	    end
+    end .
+		    
+
+%%fetches a property for a given container on a given base. Property must be an atom. Typically, the message that needs to be sent across to agents.erl. Check agents.erl for the possible messages.
+get_property(Property,BasePid,CTID)->
+    Req=erlang:make_ref(),
+    BasePid!{Property,self(),CTID,Req},
+    Property1=receive
+		 {Req,Prop}->
+		     case Prop of
+			 []->
+			     %%Container with non existing CTID 
+			     X1=["--"],
+			     X1;
+			 Any ->
+			     case is_atom(Any) of
+				 true-> Any1=atom_to_list(Any),
+					Any1;
+				 false-> Any
+			     end
+		     end
+	     after 5000 ->
+		     %%This means something sinister has happened to the base machine. Poor thing! :(
+		     Prop1="##",
+		     Prop1
+	     end.
+			 
+generate_error_ehtml(Message) ->
+    [
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,[{width,"300px"}],
+	  {a,[{href,"index.yaws"}],
+	   {h1,[],"Home"}
+	  }
+	 }
+	]
+       }
+      ]
+     },
+     {h1,[],["Internal Error"]},
+     {h4, [], Message},
+     {br}
+    ].
+
+generate_start_container_page(Base_host,CTID,Message) ->
+    [
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,[{width,"300px"}],
+	  {a,[{href,"index.yaws"}],
+	   {h1,[],"Home"}
+	  }
+	 }
+	]
+       }
+      ]
+     },{br},
+     {h1,[],string:concat(string:concat("Starting Container ",integer_to_list(CTID)),string:concat(" on ",atom_to_list(Base_host)))},
+     {h3,[],Message}
+    ].
+
+generate_stop_container_page(Base_host,CTID,Message) ->
+    [
+     {table,[{style,"text-align:center"}],
+      [
+       {tr,[],
+	[
+	 {td,[{width,"300px"}],
+	  {a,[{href,"index.yaws"}],
+	   {h1,[],"Home"}
+	  }
+	 }
+	]
+       }
+      ]
+     },{br},
+     {h1,[],string:concat(string:concat("Stopping Container ",integer_to_list(CTID)),string:concat(" on ",atom_to_list(Base_host)))},
+     {h3,[],Message}
+    ].
+     
+     </erl>
+    </div>
+  </body>
+</html>
